@@ -1,0 +1,24 @@
+{
+  "originHash" : "df6a81fb73ac6bc74eadd8029cef875c9cac786233c934722ba4b44b223f56fc",
+  "pins" : [
+    {
+      "identity" : "lzfse-swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/CharlesJS/lzfse-swift",
+      "state" : {
+        "branch" : "main",
+        "revision" : "01e33efe2b7b112f1a31a90d7735452623d5bab7"
+      }
+    },
+    {
+      "identity" : "swift-system",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-system",
+      "state" : {
+        "revision" : "50688cacbd41d547e9eb9f7a213542340b7c442b",
+        "version" : "1.7.5"
+      }
+    }
+  ],
+  "version" : 3
+}

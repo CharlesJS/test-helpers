@@ -1,0 +1,20 @@
+name: Setup Filesystems
+
+runs:
+  using: composite
+  steps:
+    - name: Fetch apt packages
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt update
+        sudo apt-get install -y exfatprogs dosfstools exfat-fuse make libfuse-dev libfsapfs-utils
+      shell: bash
+    - name: Install HFS+ support
+      if: runner.os == 'Linux'
+      run: |
+        git clone https://github.com/0x09/hfsfuse /tmp/hfsfuse
+        cd /tmp/hfsfuse
+        git checkout 0.444
+        sudo CC=/usr/bin/clang make install
+      shell: bash
+

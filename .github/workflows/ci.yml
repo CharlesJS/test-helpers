@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  unit_tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, macos-15-intel, ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v6
+    - uses: ./.github/setup-filesystems
+    - uses: SwiftyLab/setup-swift@latest
+    - name: Run tests
+      run: sudo swift test --xunit-output testresults.xml
+    - name: Collect artifacts
+      if: always()
+      run: |
+        mkdir -p artifacts
+        cp testresults*.xml artifacts/ 2>/dev/null || true
+    - name: Upload test results
+      uses: actions/upload-artifact@v7
+      if: always()
+      with:
+        name: test-results-${{ matrix.os }}-${{ matrix.traits }}
+        path: artifacts/
+
