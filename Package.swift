@@ -15,7 +15,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-system", from: "1.7.5"),
-        .package(url: "https://github.com/CharlesJS/lzfse-swift", branch: "main"),
+        .package(url: "https://github.com/CharlesJS/lzfse-swift", from: "1.0.0"),
     ],
     targets: [
         .target(
