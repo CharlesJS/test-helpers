@@ -1,0 +1,3 @@
+[submodule "Sources/FileSystemDeps/hfsfuse"]
+	path = Sources/FileSystemDeps/hfsfuse
+	url = https://github.com/0x09/hfsfuse
