@@ -60,7 +60,7 @@ extension DiskImageHelperTests {
 #else
             let mounts = try String(contentsOf: URL(filePath: "/proc/self/mounts"), encoding: .utf8)
             let mountPoint = image.mountPoint.path().dropLast(1) // get rid of the trailing slash
-            let match = try #require(mounts.firstMatch(of: Regex(#"(?m)^\s*(\S+)\s+\#(mountPoint)\s"#)))
+            try #expect(mounts.firstMatch(of: Regex(#"(?m)^\s*(\S+)\s+\#(mountPoint)\s"#)) != nil)
 
             let blkid = Process()
             let stdoutPipe = Pipe()

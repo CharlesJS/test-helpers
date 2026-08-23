@@ -7,7 +7,7 @@ runs:
       if: runner.os == 'Linux'
       run: |
         sudo apt update
-        sudo apt-get install -y exfatprogs dosfstools exfat-fuse make libfuse-dev libfsapfs-utils
+        sudo apt-get install -y exfatprogs dosfstools exfat-fuse make libfuse-dev libfsapfs-utils udftools
       shell: bash
     - name: Install HFS+ support
       if: runner.os == 'Linux'

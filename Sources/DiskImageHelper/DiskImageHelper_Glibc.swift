@@ -26,6 +26,7 @@ public struct DiskImageHelper: Sendable {
         case ext4 = "ext4"
         case fat32 = "fat32"
         case hfsPlus = "hfs+"
+        case udf = "udf"
 
         public init?(name: String) { self.init(rawValue: name) }
 
@@ -47,7 +48,7 @@ public struct DiskImageHelper: Sendable {
 
         public var minimumSize: Int {
             switch self {
-            case .ext2, .fat32, .hfsPlus: 1024 * 1024
+            case .ext2, .fat32, .hfsPlus, .udf: 1024 * 1024
             case .apfs, .ext3, .ext4: 8 * 1024 * 1024
             case .exfat: 16 * 1024 * 1024
             }
@@ -68,6 +69,7 @@ public struct DiskImageHelper: Sendable {
             case .ext4: URL(filePath: "/usr/sbin/mkfs.ext4")
             case .exfat: URL(filePath: "/usr/sbin/mkfs.exfat")
             case .fat32: URL(filePath: "/usr/sbin/mkfs.fat")
+            case .udf: URL(filePath: "/usr/sbin/mkfs.udf")
             }
         }
 
@@ -80,7 +82,7 @@ public struct DiskImageHelper: Sendable {
 
         fileprivate var mountCommand: URL {
             switch self {
-            case .exfat, .ext2, .ext3, .ext4, .fat32: Tools.mount
+            case .exfat, .ext2, .ext3, .ext4, .fat32, .udf: Tools.mount
             case .apfs: URL(filePath: "/usr/bin/fsapfsmount")
             case .hfsPlus: URL(filePath: "/usr/local/bin/hfsfuse")
             }
@@ -88,9 +90,10 @@ public struct DiskImageHelper: Sendable {
 
         fileprivate var mountArgs: [String] {
             switch self {
-            case .exfat: ["-t", "exfat-fuse"]
             case .ext2, .ext3, .ext4, .apfs, .hfsPlus: []
+            case .exfat: ["-t", "exfat-fuse"]
             case .fat32: ["-t", "vfat"]
+            case .udf: ["-t", "udf"]
             }
         }
 
@@ -322,7 +325,7 @@ public struct DiskImageHelper: Sendable {
     }
 
     private func decompressImage(at srcURL: URL, to destURL: URL) throws -> URL {
-        let partitionHints: Set<Substring> = ["Apple_APFS", "Apple_HFS", "DOS_FAT_32", "Windows_NTFS"]
+        let partitionHints: Set<Substring> = ["Apple_APFS", "Apple_HFS", "DOS_FAT_32", "UDF", "Windows_NTFS"]
 
         let srcFile = try FileHandle(forReadingFrom: srcURL)
         defer { try? srcFile.close() }
