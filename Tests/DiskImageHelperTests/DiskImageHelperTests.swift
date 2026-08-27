@@ -76,7 +76,7 @@ struct DiskImageHelperTests {
         defer { try? stdout.close() }
 
         blkid.executableURL = URL(filePath: "/usr/sbin/blkid")
-        blkid.arguments = ["-s", "TYPE", "-o", "value", "-p", devEntry.path()]
+        blkid.arguments = ["-s", "TYPE", "-o", "value", "-p", devEntry.path(percentEncoded: false)]
         blkid.standardOutput = stdoutPipe
 
         try blkid.run()
@@ -143,7 +143,7 @@ struct DiskImageHelperTests {
         let (mountPoint, devEntry) = try DiskImageHelper.shared.mountImage(url: imageURL, readOnly: false)
         defer { try? DiskImageHelper.shared.unmountImage(mountPoint: mountPoint, devEntry: devEntry) }
 
-        #expect(devEntry.path().hasPrefix("/dev/"))
+        #expect(devEntry.path(percentEncoded: false).hasPrefix("/dev/"))
     }
 
     // MARK: - unmountImage Tests

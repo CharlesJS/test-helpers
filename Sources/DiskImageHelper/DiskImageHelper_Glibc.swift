@@ -130,7 +130,7 @@ public struct DiskImageHelper: Sendable {
         try self.createBlankFile(at: url, size: size)
 
         do {
-            try self.runTool(url: mkfs, arguments: fileSystem.mkfsArguments + [url.path()])
+            try self.runTool(url: mkfs, arguments: fileSystem.mkfsArguments + [url.path(percentEncoded: false)])
 
             return url
         } catch {
@@ -147,7 +147,7 @@ public struct DiskImageHelper: Sendable {
         }
 
         let file = try FileDescriptor.open(
-            FilePath(url.path()),
+            FilePath(url.path(percentEncoded: false)),
             .writeOnly,
             options: [.create, .exclusiveCreate],
             permissions: [.ownerReadWrite, .groupRead, .otherRead]
@@ -206,7 +206,7 @@ public struct DiskImageHelper: Sendable {
             args.append("-r")
         }
 
-        args.append(url.path())
+        args.append(url.path(percentEncoded: false))
 
         guard let devEntry = try self.runTool(url: Tools.losetup, arguments: args) else {
             throw CocoaError(.fileReadUnknown)
@@ -216,7 +216,7 @@ public struct DiskImageHelper: Sendable {
     }
 
     private func teardownLoop(devEntry: URL) throws {
-        try self.runTool(url: Tools.losetup, arguments: ["-d", devEntry.path()])
+        try self.runTool(url: Tools.losetup, arguments: ["-d", devEntry.path(percentEncoded: false)])
     }
 
     private func mountLoop(
@@ -234,15 +234,15 @@ public struct DiskImageHelper: Sendable {
             args += fileSystem.readOnlyArgs
         }
 
-        args += [devEntry.path(), mountPoint.path()]
+        args += [devEntry.path(percentEncoded: false), mountPoint.path(percentEncoded: false)]
 
         try self.runTool(url: fileSystem.mountCommand, arguments: args)
     }
 
     public func unmountImage(mountPoint: URL, devEntry: URL) throws {
-        try self.runTool(url: Tools.umount, arguments: ["-d", devEntry.path()])
+        try self.runTool(url: Tools.umount, arguments: ["-d", devEntry.path(percentEncoded: false)])
 
-        guard rmdir(mountPoint.path()) == 0 else { throw Errno(rawValue: errno) }
+        guard rmdir(mountPoint.path(percentEncoded: false)) == 0 else { throw Errno(rawValue: errno) }
     }
 
     private func findMountPoint(devEntry: URL) throws -> String {
@@ -251,7 +251,7 @@ public struct DiskImageHelper: Sendable {
 
         guard let data = try file.readToEnd(),
               let text = String(data: data, encoding: .utf8),
-              let match = text.firstMatch(of: try Regex(#"(?m)^\s*\#(devEntry.path())\s+(\S+)\s"#)),
+              let match = text.firstMatch(of: try Regex(#"(?m)^\s*\#(devEntry.path(percentEncoded: false))\s+(\S+)\s"#)),
               let mountPoint = match[1].substring else {
             throw CocoaError(.fileNoSuchFile)
         }
@@ -260,7 +260,9 @@ public struct DiskImageHelper: Sendable {
     }
 
     private func getFileSystem(at url: URL) throws -> FileSystem? {
-        guard let response = try self.runTool(url: Tools.blkid, arguments: ["-s", "TYPE", "-o", "value", "-p", url.path()]),
+        let path = url.path(percentEncoded: false)
+
+        guard let response = try self.runTool(url: Tools.blkid, arguments: ["-s", "TYPE", "-o", "value", "-p", path]),
               let fileSystem = FileSystem(osName: response.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             return nil
         }
@@ -366,7 +368,7 @@ public struct DiskImageHelper: Sendable {
         }
 
         let dstFile = try FileDescriptor.open(
-            destURL.path(),
+            destURL.path(percentEncoded: false),
             .writeOnly,
             options: [.create, .exclusiveCreate],
             permissions: [.ownerReadWrite, .groupRead, .otherRead]

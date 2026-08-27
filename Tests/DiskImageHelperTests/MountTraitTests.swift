@@ -59,7 +59,7 @@ extension DiskImageHelperTests {
             let typeName = try image.mountPoint.resourceValues(forKeys: [.volumeTypeNameKey]).volumeTypeName
 #else
             let mounts = try String(contentsOf: URL(filePath: "/proc/self/mounts"), encoding: .utf8)
-            let mountPoint = image.mountPoint.path().dropLast(1) // get rid of the trailing slash
+            let mountPoint = image.mountPoint.path(percentEncoded: false).dropLast(1) // get rid of the trailing slash
             try #expect(mounts.firstMatch(of: Regex(#"(?m)^\s*(\S+)\s+\#(mountPoint)\s"#)) != nil)
 
             let blkid = Process()
@@ -68,7 +68,7 @@ extension DiskImageHelperTests {
             defer { try? stdout.close() }
 
             blkid.executableURL = URL(filePath: "/usr/sbin/blkid")
-            blkid.arguments = ["-s", "TYPE", "-o", "value", "-p", image.devEntry.path()]
+            blkid.arguments = ["-s", "TYPE", "-o", "value", "-p", image.devEntry.path(percentEncoded: false)]
             blkid.standardOutput = stdoutPipe
 
             try blkid.run()
@@ -136,8 +136,8 @@ extension DiskImageHelperTests {
 
             #expect(devError?.code == .fileReadNoSuchFile)
 #else
-            #expect(!mounts.contains(eachImage.mountPoint.path().dropLast(1)))
-            #expect(!mounts.contains(eachImage.devEntry.path()))
+            #expect(!mounts.contains(eachImage.mountPoint.path(percentEncoded: false).dropLast(1)))
+            #expect(!mounts.contains(eachImage.devEntry.path(percentEncoded: false)))
 #endif
         }
     }

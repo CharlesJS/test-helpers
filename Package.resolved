@@ -1,13 +1,13 @@
 {
-  "originHash" : "df6a81fb73ac6bc74eadd8029cef875c9cac786233c934722ba4b44b223f56fc",
+  "originHash" : "8ad618d64a25e3789e312e161f2f66720bab1f09716dbfe64a4431846056af7d",
   "pins" : [
     {
       "identity" : "lzfse-swift",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/CharlesJS/lzfse-swift",
       "state" : {
-        "branch" : "main",
-        "revision" : "01e33efe2b7b112f1a31a90d7735452623d5bab7"
+        "revision" : "01e33efe2b7b112f1a31a90d7735452623d5bab7",
+        "version" : "1.0.0"
       }
     },
     {
