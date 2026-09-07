@@ -61,6 +61,13 @@ public struct DiskImageHelper: Sendable {
             }
         }
 
+        fileprivate func rootDirectory(for mountPoint: URL) -> URL {
+            switch self {
+            case .apfs: mountPoint.appendingPathComponent("root")
+            default: mountPoint
+            }
+        }
+
         fileprivate var mkfsCommand: URL? {
             switch self {
             case .apfs, .hfsPlus: nil
@@ -83,14 +90,15 @@ public struct DiskImageHelper: Sendable {
         fileprivate var mountCommand: URL {
             switch self {
             case .exfat, .ext2, .ext3, .ext4, .fat32, .udf: Tools.mount
-            case .apfs: URL(filePath: "/usr/bin/fsapfsmount")
+            case .apfs: URL(filePath: "/usr/local/bin/apfs-fuse")
             case .hfsPlus: URL(filePath: "/usr/local/bin/hfsfuse")
             }
         }
 
         fileprivate var mountArgs: [String] {
             switch self {
-            case .ext2, .ext3, .ext4, .apfs, .hfsPlus: []
+            case .apfs: ["-oallow_other"]
+            case .ext2, .ext3, .ext4, .hfsPlus: []
             case .exfat: ["-t", "exfat-fuse"]
             case .fat32: ["-t", "vfat"]
             case .udf: ["-t", "udf"]
@@ -167,16 +175,19 @@ public struct DiskImageHelper: Sendable {
         }
     }
 
-    public func mountImage(url: URL, readOnly: Bool) throws -> (mountPoint: URL, devEntry: URL) {
+    public func mountImage(url: URL, readOnly: Bool) throws -> (mountPoint: URL, rootDirectory: URL, devEntry: URL) {
         let tempDir = FileManager.default.temporaryDirectory
-        let mountPoint = tempDir.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        let mountPoint = tempDir.appending(
+            path: "\(url.lastPathComponent)-\(UUID().uuidString)",
+            directoryHint: .isDirectory
+        )
         let devEntry = try self.setupLoop(url: url, readOnly: readOnly)
 
         do {
             try FileManager.default.createDirectory(at: mountPoint, withIntermediateDirectories: true)
-            try self.mountLoop(devEntry: devEntry, at: mountPoint, readOnly: readOnly)
+            let rootDir = try self.mountLoop(devEntry: devEntry, at: mountPoint, readOnly: readOnly)
 
-            return (mountPoint: mountPoint, devEntry: devEntry)
+            return (mountPoint: mountPoint, rootDirectory: rootDir, devEntry: devEntry)
         } catch {
             try? self.teardownLoop(devEntry: devEntry)
 
@@ -224,7 +235,7 @@ public struct DiskImageHelper: Sendable {
         at mountPoint: URL,
         fileSystem: FileSystem? = nil,
         readOnly: Bool = false
-    ) throws {
+    ) throws -> URL {
         guard let fileSystem = try fileSystem ?? self.getFileSystem(at: devEntry) else {
             throw CocoaError(.fileReadUnknown)
         }
@@ -237,6 +248,8 @@ public struct DiskImageHelper: Sendable {
         args += [devEntry.path(percentEncoded: false), mountPoint.path(percentEncoded: false)]
 
         try self.runTool(url: fileSystem.mountCommand, arguments: args)
+
+        return fileSystem.rootDirectory(for: mountPoint)
     }
 
     public func unmountImage(mountPoint: URL, devEntry: URL) throws {

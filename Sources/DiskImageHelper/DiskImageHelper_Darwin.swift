@@ -100,7 +100,7 @@ public struct DiskImageHelper: Sendable {
         return URL(fileURLWithPath: path)
     }
 
-    public func mountImage(url: URL, readOnly: Bool) throws -> (mountPoint: URL, devEntry: URL) {
+    public func mountImage(url: URL, readOnly: Bool) throws -> (mountPoint: URL, rootDirectory: URL, devEntry: URL) {
         let hdiutil = Process()
         let stdout = Pipe()
         let stderr = Pipe()
@@ -126,7 +126,9 @@ public struct DiskImageHelper: Sendable {
 
         for eachEntity in try #require(dict["system-entities"] as? [[String : Any]]) {
             if let mountPoint = eachEntity["mount-point"] as? String, let devEntry = eachEntity["dev-entry"] as? String {
-                return (mountPoint: URL(fileURLWithPath: mountPoint), devEntry: URL(fileURLWithPath: devEntry))
+                let mountPointURL = URL(fileURLWithPath: mountPoint)
+
+                return (mountPoint: mountPointURL, rootDirectory: mountPointURL, devEntry: URL(fileURLWithPath: devEntry))
             }
         }
 
