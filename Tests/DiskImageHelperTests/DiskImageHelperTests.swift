@@ -65,10 +65,10 @@ struct DiskImageHelperTests {
         )
         #expect((try? resultURL.checkResourceIsReachable()) == true)
 
-        let (mountPoint, devEntry) = try DiskImageHelper.shared.mountImage(url: resultURL, readOnly: true)
+        let (mountPoint, rootDir, devEntry) = try DiskImageHelper.shared.mountImage(url: resultURL, readOnly: true)
         defer { try? DiskImageHelper.shared.unmountImage(mountPoint: mountPoint, devEntry: devEntry) }
 #if canImport(Darwin)
-        #expect(try mountPoint.resourceValues(forKeys: [.volumeTypeNameKey]).volumeTypeName == fileSystem.osName)
+        #expect(try rootDir.resourceValues(forKeys: [.volumeTypeNameKey]).volumeTypeName == fileSystem.osName)
 #else
         let blkid = Process()
         let stdoutPipe = Pipe()
@@ -100,13 +100,19 @@ struct DiskImageHelperTests {
             fileSystem: Self.defaultFileSystem
         )
 
-        let (mountPoint, devEntry) = try DiskImageHelper.shared.mountImage(url: imageURL, readOnly: false)
+        let (mountPoint, rootDir, devEntry) = try DiskImageHelper.shared.mountImage(url: imageURL, readOnly: false)
         defer { try? DiskImageHelper.shared.unmountImage(mountPoint: mountPoint, devEntry: devEntry) }
 
         #expect(mountPoint.isFileURL)
         #expect((try? mountPoint.checkResourceIsReachable()) == true)
+        #expect(rootDir.isFileURL)
+        #expect((try? rootDir.checkResourceIsReachable()) == true)
         #expect(devEntry.isFileURL)
         #expect((try? devEntry.checkResourceIsReachable()) == true)
+
+        let testfile = rootDir.appendingPathComponent("write-test-\(UUID().uuidString)")
+        try "Writability Test".write(to: testfile, atomically: true, encoding: .utf8)
+        #expect((try? testfile.checkResourceIsReachable()) == true)
     }
 
     @Test func mountImageReadOnlyCreatesReadOnlyMount() async throws {
@@ -121,11 +127,23 @@ struct DiskImageHelperTests {
             fileSystem: Self.defaultFileSystem
         )
 
-        let (mountPoint, devEntry) = try DiskImageHelper.shared.mountImage(url: imageURL, readOnly: true)
+        let (mountPoint, rootDir, devEntry) = try DiskImageHelper.shared.mountImage(url: imageURL, readOnly: true)
         defer { try? DiskImageHelper.shared.unmountImage(mountPoint: mountPoint, devEntry: devEntry) }
 
         #expect(mountPoint.isFileURL)
         #expect((try? mountPoint.checkResourceIsReachable()) == true)
+        #expect(rootDir.isFileURL)
+        #expect((try? rootDir.checkResourceIsReachable()) == true)
+        #expect(devEntry.isFileURL)
+        #expect((try? devEntry.checkResourceIsReachable()) == true)
+
+        let testfile = rootDir.appendingPathComponent("write-test-\(UUID().uuidString)")
+        #expect(
+            #expect(throws: CocoaError.self) {
+                try "Writability Test".write(to: testfile, atomically: true, encoding: .utf8)
+            }?.code == .fileWriteVolumeReadOnly
+        )
+        #expect((try? testfile.checkResourceIsReachable()) != true)
     }
 
     @Test func mountImageDevEntryFormat() async throws {
@@ -140,7 +158,7 @@ struct DiskImageHelperTests {
             fileSystem: Self.defaultFileSystem
         )
 
-        let (mountPoint, devEntry) = try DiskImageHelper.shared.mountImage(url: imageURL, readOnly: false)
+        let (mountPoint, _, devEntry) = try DiskImageHelper.shared.mountImage(url: imageURL, readOnly: false)
         defer { try? DiskImageHelper.shared.unmountImage(mountPoint: mountPoint, devEntry: devEntry) }
 
         #expect(devEntry.path(percentEncoded: false).hasPrefix("/dev/"))
@@ -161,14 +179,16 @@ struct DiskImageHelperTests {
         )
 
         let mounts = FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: nil) ?? []
-        let (mountPoint, devEntry) = try DiskImageHelper.shared.mountImage(url: imageURL, readOnly: false)
+        let (mountPoint, rootDir, devEntry) = try DiskImageHelper.shared.mountImage(url: imageURL, readOnly: false)
         #expect((try? mountPoint.checkResourceIsReachable()) == true)
+        #expect((try? rootDir.checkResourceIsReachable()) == true)
         #expect((try? devEntry.checkResourceIsReachable()) == true)
         #expect(FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: nil)?.count == mounts.count + 1)
 
         try DiskImageHelper.shared.unmountImage(mountPoint: mountPoint, devEntry: devEntry)
 
         #expect((try? mountPoint.checkResourceIsReachable()) != true)
+        #expect((try? rootDir.checkResourceIsReachable()) != true)
 #if canImport(Darwin)
         #expect((try? devEntry.checkResourceIsReachable()) != true)
 #endif
@@ -189,11 +209,13 @@ struct DiskImageHelperTests {
             fileSystem: Self.defaultFileSystem
         )
 
-        let (mountPoint, devEntry) = try DiskImageHelper.shared.mountImage(url: imageURL, readOnly: false)
+        let (mountPoint, rootDir, devEntry) = try DiskImageHelper.shared.mountImage(url: imageURL, readOnly: false)
         #expect((try? mountPoint.checkResourceIsReachable()) == true)
+        #expect((try? rootDir.checkResourceIsReachable()) == true)
 
         try DiskImageHelper.shared.unmountImage(mountPoint: mountPoint, devEntry: devEntry)
         #expect((try? mountPoint.checkResourceIsReachable()) != true)
+        #expect((try? rootDir.checkResourceIsReachable()) != true)
     }
 
     @Test func multipleMountUnmountCycles() async throws {
@@ -209,7 +231,7 @@ struct DiskImageHelperTests {
                 fileSystem: fileSystem
             )
 
-            let (mountPoint, devEntry) = try DiskImageHelper.shared.mountImage(url: imageURL, readOnly: false)
+            let (mountPoint, _, devEntry) = try DiskImageHelper.shared.mountImage(url: imageURL, readOnly: false)
             try DiskImageHelper.shared.unmountImage(mountPoint: mountPoint, devEntry: devEntry)
         }
     }

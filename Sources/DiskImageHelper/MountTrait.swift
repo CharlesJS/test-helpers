@@ -46,7 +46,7 @@ public struct GenericDiskImageInfo: DiskImageInfo {
     }
 }
 
-@TaskLocal private var _mountedImages: [UUID : (mountPoint: URL, devEntry: URL)] = [:]
+@TaskLocal private var _mountedImages: [UUID : (mountPoint: URL, rootDirectory: URL, devEntry: URL)] = [:]
 
 @available(macOS 10.15.4, *)
 public struct MountTrait<Info: DiskImageInfo>: SuiteTrait, TestScoping {
@@ -59,6 +59,14 @@ public struct MountTrait<Info: DiskImageInfo>: SuiteTrait, TestScoping {
             }
 
             return mountedImage.mountPoint
+        }
+
+        public var rootDirectory: URL {
+            guard let mountedImage = _mountedImages[self.uuid] else {
+                preconditionFailure("This property must only be called from inside the scope of a test")
+            }
+
+            return mountedImage.rootDirectory
         }
 
         public var devEntry: URL {
@@ -99,12 +107,12 @@ public struct MountTrait<Info: DiskImageInfo>: SuiteTrait, TestScoping {
         let dmgHelper = DiskImageHelper.shared
 
         var createdImages: [URL] = []
-        var mountedImages: [UUID : (mountPoint: URL, devEntry: URL)] = [:]
+        var mountedImages: [UUID : (mountPoint: URL, rootDirectory: URL, devEntry: URL)] = [:]
         createdImages.reserveCapacity(self.images.count)
         mountedImages.reserveCapacity(self.images.count)
 
         defer {
-            for (mountPoint, devEntry) in mountedImages.values {
+            for (mountPoint, _, devEntry) in mountedImages.values {
                 do {
                     try dmgHelper.unmountImage(mountPoint: mountPoint, devEntry: devEntry)
                 } catch {

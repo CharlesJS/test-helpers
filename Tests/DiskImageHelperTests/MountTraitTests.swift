@@ -9,6 +9,10 @@
 import Foundation
 import Testing
 
+#if !canImport(Darwin)
+import RegexBuilder
+#endif
+
 private let fixtureURLs = Bundle.module.urls(forResourcesWithExtension: "dmg", subdirectory: "fixtures")!.map { $0 as URL }
 
 private let withBlankImages = MountTrait(size: 1024 * 1024, fileSystems: DiskImageHelper.shared.writableFileSystems)
@@ -41,13 +45,17 @@ extension DiskImageHelperTests {
         @Test(arguments: withBlankImages.images)
         func mountsImageSuccessfully(image: MountTrait<GenericDiskImageInfo>.DiskImage) throws {
             #expect(image.mountPoint.isFileURL)
+            #expect(image.rootDirectory.isFileURL)
             #expect(image.devEntry.isFileURL)
             #expect(try image.mountPoint.checkResourceIsReachable())
+            #expect(try image.rootDirectory.checkResourceIsReachable())
             #expect(try image.devEntry.checkResourceIsReachable())
 
             let resourceValues = try image.mountPoint.resourceValues(forKeys: [.isVolumeKey, .volumeURLKey])
             #expect(resourceValues.isVolume == true)
             #expect(resourceValues.volume == image.mountPoint)
+
+            #expect(image.rootDirectory.path().hasPrefix(image.mountPoint.path()))
         }
     }
 
@@ -59,8 +67,15 @@ extension DiskImageHelperTests {
             let typeName = try image.mountPoint.resourceValues(forKeys: [.volumeTypeNameKey]).volumeTypeName
 #else
             let mounts = try String(contentsOf: URL(filePath: "/proc/self/mounts"), encoding: .utf8)
-            let mountPoint = image.mountPoint.path(percentEncoded: false).dropLast(1) // get rid of the trailing slash
-            try #expect(mounts.firstMatch(of: Regex(#"(?m)^\s*(\S+)\s+\#(mountPoint)\s"#)) != nil)
+            let regex = Regex {
+                Anchor.startOfLine
+                ZeroOrMore(.whitespace)
+                OneOrMore(.whitespace.inverted)
+                OneOrMore(.whitespace)
+                image.mountPoint.path(percentEncoded: false).dropLast(1) // get rid of the trailing slash
+                OneOrMore(.whitespace)
+            }
+            try #expect(mounts.firstMatch(of: regex) != nil)
 
             let blkid = Process()
             let stdoutPipe = Pipe()
@@ -81,10 +96,10 @@ extension DiskImageHelperTests {
 
         @Test(arguments: withFixtures.images)
         func readFileContents(image: MountTrait<GenericDiskImageInfo>.DiskImage) throws {
-            let qbf = try String(contentsOf: image.mountPoint.appending(path: "foo/qbf.txt"), encoding: .utf8)
+            let qbf = try String(contentsOf: image.rootDirectory.appending(path: "foo/qbf.txt"), encoding: .utf8)
             #expect(qbf == "The quick brown fox jumps over the lazy dog.\n")
 
-            let lorem = try Data(contentsOf: image.mountPoint.appending(path: "bar/loremipsum.txt"))
+            let lorem = try Data(contentsOf: image.rootDirectory.appending(path: "bar/loremipsum.txt"))
             #expect(lorem.count == 446)
             #expect(lorem.prefix(26) == "Lorem ipsum dolor sit amet".data(using: .utf8))
             #expect(lorem.suffix(28) == "mollit anim id est laborum.\n".data(using: .utf8))
@@ -94,9 +109,9 @@ extension DiskImageHelperTests {
     @Test
     func cleansUpBlankImages() async throws {
         actor Storage {
-            var images: [(imageURL: URL, mountPoint: URL, devEntry: URL)] = []
-            func addImage(url: URL, mountPoint: URL, devEntry: URL) {
-                self.images.append((imageURL: url, mountPoint: mountPoint, devEntry: devEntry))
+            var images: [(imageURL: URL, mountPoint: URL, rootDirectory: URL, devEntry: URL)] = []
+            func addImage(url: URL, mountPoint: URL, rootDirectory: URL, devEntry: URL) {
+                self.images.append((imageURL: url, mountPoint: mountPoint, rootDirectory: rootDirectory, devEntry: devEntry))
             }
         }
 
@@ -107,11 +122,13 @@ extension DiskImageHelperTests {
                 await imageStorage.addImage(
                     url: eachImage.imageURL,
                     mountPoint: eachImage.mountPoint,
+                    rootDirectory: eachImage.rootDirectory,
                     devEntry: eachImage.devEntry
                 )
 
                 try #expect(eachImage.imageURL.checkResourceIsReachable())
                 try #expect(eachImage.mountPoint.checkResourceIsReachable())
+                try #expect(eachImage.rootDirectory.checkResourceIsReachable())
                 try #expect(eachImage.devEntry.checkResourceIsReachable())
 
                 try #expect(eachImage.mountPoint.resourceValues(forKeys: [.isVolumeKey]).isVolume == true)
@@ -125,9 +142,11 @@ extension DiskImageHelperTests {
         for eachImage in await imageStorage.images {
             let imageURLError = #expect(throws: CocoaError.self) { try eachImage.imageURL.checkResourceIsReachable() }
             let mountPointError = #expect(throws: CocoaError.self) { try eachImage.mountPoint.checkResourceIsReachable() }
+            let rootDirError = #expect(throws: CocoaError.self) { try eachImage.rootDirectory.checkResourceIsReachable() }
 
             #expect(imageURLError?.code == .fileReadNoSuchFile)
             #expect(mountPointError?.code == .fileReadNoSuchFile)
+            #expect(rootDirError?.code == .fileReadNoSuchFile)
 
 #if canImport(Darwin)
             let devError = #expect(throws: CocoaError.self) {

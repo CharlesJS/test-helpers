@@ -7,7 +7,19 @@ runs:
       if: runner.os == 'Linux'
       run: |
         sudo apt update
-        sudo apt-get install -y exfatprogs dosfstools exfat-fuse make libfuse-dev libfsapfs-utils udftools
+        sudo apt-get install -y exfatprogs dosfstools exfat-fuse make libfuse3-dev bzip2 libbz2-dev libattr1-dev zlib1g-dev udftools
+      shell: bash
+    - name: Install APFS support
+      if: runner.os == 'Linux'
+      run: |
+        git clone https://github.com/sgan81/apfs-fuse.git /tmp/apfsfuse
+        cd /tmp/apfsfuse
+        git submodule update --init
+
+        mkdir build && cd build
+        cmake ..
+        make
+        cp apfs-fuse /usr/local/bin/
       shell: bash
     - name: Install HFS+ support
       if: runner.os == 'Linux'
