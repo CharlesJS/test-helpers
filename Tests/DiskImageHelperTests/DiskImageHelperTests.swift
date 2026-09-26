@@ -75,8 +75,8 @@ struct DiskImageHelperTests {
         let stdout = stdoutPipe.fileHandleForReading
         defer { try? stdout.close() }
 
-        blkid.executableURL = URL(filePath: "/usr/sbin/blkid")
-        blkid.arguments = ["-s", "TYPE", "-o", "value", "-p", devEntry.path(percentEncoded: false)]
+        blkid.executableURL = URL(filePath: "/usr/bin/sudo")
+        blkid.arguments = ["/usr/sbin/blkid", "-s", "TYPE", "-o", "value", "-p", devEntry.path(percentEncoded: false)]
         blkid.standardOutput = stdoutPipe
 
         try blkid.run()
@@ -110,9 +110,15 @@ struct DiskImageHelperTests {
         #expect(devEntry.isFileURL)
         #expect((try? devEntry.checkResourceIsReachable()) == true)
 
+        let sudo = Process()
+        sudo.executableURL = URL(filePath: "/usr/bin/sudo")
+        sudo.arguments = ["chown", "-R", "\(getuid())", rootDir.path(percentEncoded: false)]
+        try sudo.run()
+        sudo.waitUntilExit()
+
         let testfile = rootDir.appendingPathComponent("write-test-\(UUID().uuidString)")
         try "Writability Test".write(to: testfile, atomically: true, encoding: .utf8)
-        #expect((try? testfile.checkResourceIsReachable()) == true)
+        #expect((try? String(contentsOf: testfile, encoding: .utf8)) == "Writability Test")
     }
 
     @Test func mountImageReadOnlyCreatesReadOnlyMount() async throws {

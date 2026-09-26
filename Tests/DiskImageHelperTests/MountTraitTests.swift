@@ -75,15 +75,17 @@ extension DiskImageHelperTests {
                 image.mountPoint.path(percentEncoded: false).dropLast(1) // get rid of the trailing slash
                 OneOrMore(.whitespace)
             }
-            try #expect(mounts.firstMatch(of: regex) != nil)
+            #expect(mounts.firstMatch(of: regex) != nil)
 
             let blkid = Process()
             let stdoutPipe = Pipe()
             let stdout = stdoutPipe.fileHandleForReading
             defer { try? stdout.close() }
 
-            blkid.executableURL = URL(filePath: "/usr/sbin/blkid")
-            blkid.arguments = ["-s", "TYPE", "-o", "value", "-p", image.devEntry.path(percentEncoded: false)]
+            let devEntry = image.devEntry.path(percentEncoded: false)
+
+            blkid.executableURL = URL(filePath: "/usr/bin/sudo")
+            blkid.arguments = ["/usr/sbin/blkid", "-s", "TYPE", "-o", "value", "-p", devEntry]
             blkid.standardOutput = stdoutPipe
 
             try blkid.run()
