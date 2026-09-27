@@ -97,9 +97,9 @@ public struct DiskImageHelper: Sendable {
 
         fileprivate var mountArgs: [String] {
             switch self {
-            case .apfs: ["-oallow_other"]
-            case .ext2, .ext3, .ext4, .hfsPlus: []
-            case .exfat: ["-t", "exfat-fuse"]
+            case .apfs, .hfsPlus: ["-oallow_other"]
+            case .ext2, .ext3, .ext4: []
+            case .exfat: ["-t", "exfat-fuse", "-oallow_other"]
             case .fat32: ["-t", "vfat"]
             case .udf: ["-t", "udf"]
             }
@@ -124,6 +124,7 @@ public struct DiskImageHelper: Sendable {
         static let losetup = URL(filePath: "/usr/sbin/losetup")
         static let mount = URL(filePath: "/usr/bin/mount")
         static let umount = URL(filePath: "/usr/bin/umount")
+        static let sudo = URL(filePath: "/usr/bin/sudo")
     }
 
     public static let shared = Self.init()
@@ -219,7 +220,7 @@ public struct DiskImageHelper: Sendable {
 
         args.append(url.path(percentEncoded: false))
 
-        guard let devEntry = try self.runTool(url: Tools.losetup, arguments: args) else {
+        guard let devEntry = try self.runTool(url: Tools.losetup, arguments: args, useSudo: true) else {
             throw CocoaError(.fileReadUnknown)
         }
 
@@ -247,13 +248,13 @@ public struct DiskImageHelper: Sendable {
 
         args += [devEntry.path(percentEncoded: false), mountPoint.path(percentEncoded: false)]
 
-        try self.runTool(url: fileSystem.mountCommand, arguments: args)
+        try self.runTool(url: fileSystem.mountCommand, arguments: args, useSudo: true)
 
         return fileSystem.rootDirectory(for: mountPoint)
     }
 
     public func unmountImage(mountPoint: URL, devEntry: URL) throws {
-        try self.runTool(url: Tools.umount, arguments: ["-d", devEntry.path(percentEncoded: false)])
+        try self.runTool(url: Tools.umount, arguments: ["-d", devEntry.path(percentEncoded: false)], useSudo: true)
 
         guard rmdir(mountPoint.path(percentEncoded: false)) == 0 else { throw Errno(rawValue: errno) }
     }
@@ -274,8 +275,9 @@ public struct DiskImageHelper: Sendable {
 
     private func getFileSystem(at url: URL) throws -> FileSystem? {
         let path = url.path(percentEncoded: false)
+        let args = ["-s", "TYPE", "-o", "value", "-p", path]
 
-        guard let response = try self.runTool(url: Tools.blkid, arguments: ["-s", "TYPE", "-o", "value", "-p", path]),
+        guard let response = try self.runTool(url: Tools.blkid, arguments: args, useSudo: true),
               let fileSystem = FileSystem(osName: response.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             return nil
         }
@@ -284,7 +286,7 @@ public struct DiskImageHelper: Sendable {
     }
 
     @discardableResult
-    private func runTool(url: URL, arguments: [String]) throws -> String? {
+    private func runTool(url: URL, arguments: [String], useSudo: Bool = false) throws -> String? {
         let process = Process()
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
@@ -297,8 +299,13 @@ public struct DiskImageHelper: Sendable {
             try? stderr.close()
         }
 
-        process.executableURL = url
-        process.arguments = arguments
+        if useSudo {
+            process.executableURL = Tools.sudo
+            process.arguments = [url.path(percentEncoded: false)] + arguments
+        } else {
+            process.executableURL = url
+            process.arguments = arguments
+        }
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 
