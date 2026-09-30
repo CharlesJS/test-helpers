@@ -126,12 +126,17 @@ public struct MountTrait<Info: DiskImageInfo>: SuiteTrait, TestScoping {
         }
 
         for eachImage in self.images {
+            let readOnly: Bool
+
             if let (size: size, fileSystem: fileSystem) = eachImage.createInfo {
                 let dmgURL = try dmgHelper.createDiskImage(at: eachImage.imageURL, size: size, fileSystem: fileSystem)
                 createdImages.append(dmgURL)
+                readOnly = false
+            } else {
+                readOnly = true
             }
 
-            try mountedImages[eachImage.uuid] = dmgHelper.mountImage(url: eachImage.imageURL, readOnly: true)
+            try mountedImages[eachImage.uuid] = dmgHelper.mountImage(url: eachImage.imageURL, readOnly: readOnly)
         }
 
         try await $_mountedImages.withValue(mountedImages) {

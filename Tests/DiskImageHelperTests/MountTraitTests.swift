@@ -57,6 +57,15 @@ extension DiskImageHelperTests {
 
             #expect(image.rootDirectory.path().hasPrefix(image.mountPoint.path()))
         }
+
+        @Test(arguments: withBlankImages.images)
+        func mountsWritableImage(image: MountTrait<GenericDiskImageInfo>.DiskImage) throws {
+            let url = image.mountPoint.appending(path: UUID().uuidString)
+
+            try "write test".write(to: url, atomically: true, encoding: .utf8)
+
+            try #expect(String(contentsOf: url, encoding: .utf8) == "write test")
+        }
     }
 
     @Suite(withFixtures)
