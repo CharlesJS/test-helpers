@@ -54,6 +54,8 @@ public struct DiskImageHelper: Sendable {
             }
         }
 
+        public var isWritable: Bool { self.mkfsCommand != nil }
+
         public var supportsResourceFork: Bool {
             switch self {
             case .apfs, .hfsPlus: true
