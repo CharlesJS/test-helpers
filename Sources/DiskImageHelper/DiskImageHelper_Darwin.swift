@@ -30,7 +30,7 @@ public struct DiskImageHelper: Sendable {
 
     public enum FileSystem: String, CaseIterable, Codable, Sendable {
         case apfs = "apfs"
-        case exFat = "exfat"
+        case exfat = "exfat"
         case fat32 = "fat32"
         case hfsPlus = "hfs+"
         case udf = "udf"
@@ -67,7 +67,7 @@ public struct DiskImageHelper: Sendable {
         fileprivate var hdiutilArgument: String {
             switch self {
             case .apfs: "APFS"
-            case .exFat: "ExFAT"
+            case .exfat: "ExFAT"
             case .fat32: "FAT32"
             case .hfsPlus: "HFS+"
             case .udf: "UDF"
