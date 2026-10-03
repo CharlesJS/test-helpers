@@ -50,6 +50,13 @@ public struct DiskImageHelper: Sendable {
         public var minimumSize: Int { 1024 * 1024 }
         public var isWritable: Bool { true }
 
+        public var supportsPermissions: Bool {
+            switch self {
+            case .apfs, .hfsPlus, .udf: true
+            case .exFat, .fat32: false
+            }
+        }
+
         public var supportsResourceFork: Bool {
             switch self {
             case .apfs, .hfsPlus: true
