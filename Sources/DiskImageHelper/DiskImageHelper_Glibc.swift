@@ -63,6 +63,13 @@ public struct DiskImageHelper: Sendable {
             }
         }
 
+        public var supportsExtendedAttributes: Bool {
+            switch self {
+            case .apfs, .ext2, .ext3, .ext4, .hfsPlus: true
+            case .exfat, .fat32, .udf: false
+            }
+        }
+
         public var supportsResourceFork: Bool {
             switch self {
             case .apfs, .hfsPlus: true

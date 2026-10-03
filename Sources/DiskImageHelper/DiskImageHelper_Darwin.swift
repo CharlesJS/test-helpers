@@ -57,6 +57,8 @@ public struct DiskImageHelper: Sendable {
             }
         }
 
+        public var supportsExtendedAttributes: Bool { true }
+
         public var supportsResourceFork: Bool {
             switch self {
             case .apfs, .hfsPlus: true
