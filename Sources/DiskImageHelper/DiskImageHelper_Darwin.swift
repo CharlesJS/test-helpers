@@ -235,6 +235,14 @@ public struct DiskImageHelper: Sendable {
             } catch let error as DiskutilError {
                 if i == maxAttempts - 1 {
                     throw error
+                } else {
+                    let process = Process()
+                    process.executableURL = URL(fileURLWithPath: "/usr/sbin/diskutil")
+                    process.arguments = ["unmountDisk", "force", devEntry.path]
+                    try process.run()
+                    process.waitUntilExit()
+
+                    sleep(5)
                 }
             }
         }
