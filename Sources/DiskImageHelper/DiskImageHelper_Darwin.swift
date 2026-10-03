@@ -197,8 +197,13 @@ public struct DiskImageHelper: Sendable {
         for eachEntity in try #require(dict["system-entities"] as? [[String : Any]]) {
             if let mountPoint = eachEntity["mount-point"] as? String, let devEntry = eachEntity["dev-entry"] as? String {
                 let mountPointURL = URL(fileURLWithPath: mountPoint)
+                let devEntryURL = if #available(macOS 27.0, *) {
+                    URL(filePath: "/dev/\(devEntry)")
+                } else {
+                    URL(fileURLWithPath: devEntry)
+                }
 
-                return (mountPoint: mountPointURL, rootDirectory: mountPointURL, devEntry: URL(fileURLWithPath: devEntry))
+                return (mountPoint: mountPointURL, rootDirectory: mountPointURL, devEntry: devEntryURL)
             }
         }
 
@@ -209,24 +214,29 @@ public struct DiskImageHelper: Sendable {
         }
     }
 
-    public func unmountImage(mountPoint: URL, devEntry: URL) throws {
-        let process = Process()
-        let stderr = Pipe()
+    public func unmountImage(mountPoint: URL, devEntry: URL, maxAttempts: Int = 10) throws {
+        for i in 0..<maxAttempts {
+            do {
+                let process = Process()
+                let stderr = Pipe()
 
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/diskutil")
-        process.arguments = ["eject", devEntry.path]
-        process.standardError = stderr
+                process.executableURL = URL(fileURLWithPath: "/usr/sbin/diskutil")
+                process.arguments = ["eject", devEntry.path]
+                process.standardError = stderr
 
-        try process.run()
-        process.waitUntilExit()
+                try process.run()
+                process.waitUntilExit()
 
-        guard process.terminationStatus == 0 else {
-            throw DiskutilError(status: process.terminationStatus, stderr: stderr)
-        }
+                guard process.terminationStatus == 0 else {
+                    throw DiskutilError(status: process.terminationStatus, stderr: stderr)
+                }
 
-        let deadline = Date().addingTimeInterval(10.0)
-        while Date() < deadline, (try? mountPoint.checkResourceIsReachable()) == true {
-            usleep(100000)
+                return
+            } catch let error as DiskutilError {
+                if i == maxAttempts - 1 {
+                    throw error
+                }
+            }
         }
     }
 }
