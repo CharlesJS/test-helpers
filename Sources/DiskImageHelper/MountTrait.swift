@@ -136,12 +136,25 @@ public struct MountTrait<Info: DiskImageInfo>: SuiteTrait, TestScoping {
                 readOnly = true
             }
 
-            try mountedImages[eachImage.uuid] = dmgHelper.mountImage(url: eachImage.imageURL, readOnly: readOnly)
+            let mountInfo = try dmgHelper.mountImage(url: eachImage.imageURL, readOnly: readOnly)
+            mountedImages[eachImage.uuid] = mountInfo
+
+            if eachImage.createInfo != nil {
+                try self.changeOwner(at: mountInfo.mountPoint)
+            }
         }
 
         try await $_mountedImages.withValue(mountedImages) {
             try await f()
         }
+    }
+
+    private func changeOwner(at url: URL) throws {
+        let sudo = Process()
+        sudo.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
+        sudo.arguments = ["chown", "\(getuid())", url.path]
+        try sudo.run()
+        sudo.waitUntilExit()
     }
 }
 

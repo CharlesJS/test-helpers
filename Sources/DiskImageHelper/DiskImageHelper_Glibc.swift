@@ -63,6 +63,13 @@ public struct DiskImageHelper: Sendable {
             }
         }
 
+        public var supportsExtendedAttributes: Bool {
+            switch self {
+            case .apfs, .ext2, .ext3, .ext4, .hfsPlus: true
+            case .exfat, .fat32, .udf: false
+            }
+        }
+
         public var supportsResourceFork: Bool {
             switch self {
             case .apfs, .hfsPlus: true
@@ -109,7 +116,7 @@ public struct DiskImageHelper: Sendable {
             case .apfs, .hfsPlus: ["-oallow_other"]
             case .ext2, .ext3, .ext4: []
             case .exfat: ["-t", "exfat-fuse", "-oallow_other"]
-            case .fat32: ["-t", "vfat"]
+            case .fat32: ["-t", "vfat", "-o", "uid=\(getuid()),rw"]
             case .udf: ["-t", "udf"]
             }
         }

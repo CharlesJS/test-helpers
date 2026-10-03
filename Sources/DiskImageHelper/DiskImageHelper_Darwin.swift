@@ -12,6 +12,22 @@ import Testing
 
 @available(macOS 10.15.4, *)
 public struct DiskImageHelper: Sendable {
+    public struct DiskutilError: Error {
+        let status: Int32
+        let stderr: String
+
+        init(status: Int32, stderr: Pipe) {
+            self.status = status
+
+            if let data = try? stderr.fileHandleForReading.readToEnd(),
+               let err = String(data: data, encoding: .utf8) {
+                self.stderr = err
+            } else {
+                self.stderr = "(unknown)"
+            }
+        }
+    }
+
     public struct HdiutilError: Error {
         let status: Int32
         let stderr: String
@@ -57,6 +73,8 @@ public struct DiskImageHelper: Sendable {
             }
         }
 
+        public var supportsExtendedAttributes: Bool { true }
+
         public var supportsResourceFork: Bool {
             switch self {
             case .apfs, .hfsPlus: true
@@ -73,6 +91,15 @@ public struct DiskImageHelper: Sendable {
             case .udf: "UDF"
             }
         }
+
+        fileprivate var diskutilArgument: String? {
+            switch self {
+            case .apfs: "APFS"
+            case .exfat: "ExFAT"
+            case .fat32: "MS-DOS"
+            default: nil
+            }
+        }
     }
 
     public static let shared = Self.init()
@@ -85,51 +112,86 @@ public struct DiskImageHelper: Sendable {
         }
 
         let process = Process()
-        let stdout = Pipe()
-        let stdoutHandle = stdout.fileHandleForReading
-        let stderr = Pipe()
-        let fs = fileSystem.hdiutilArgument
+        let stdoutPipe = Pipe()
+        let stdoutHandle = stdoutPipe.fileHandleForReading
+        let stderrPipe = Pipe()
+        let diskutilFS = fileSystem.diskutilArgument
+        let hdiutilFS = fileSystem.hdiutilArgument
 
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
-        process.arguments = ["create", "-size", "\(size)b", "-fs", fs, "-volname", fs, url.path, "-plist"]
+        if #available(macOS 27.0, *), let fs = diskutilFS {
+            let path = url.path(percentEncoded: false)
+
+            process.executableURL = URL(filePath: "/usr/sbin/diskutil")
+            process.arguments = [
+                "image", "create", "blank", "--size", "\(size)", "--fs", fs, "--volumeName", fs, path, "--plist"
+            ]
+        } else {
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
+            process.arguments = ["create", "-size", "\(size)b", "-fs", hdiutilFS, "-volname", hdiutilFS, url.path, "-plist"]
+        }
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+
+        try process.run()
+        process.waitUntilExit()
+
+        if #available(macOS 27.0, *), diskutilFS != nil {
+            guard let stdout = try stdoutHandle.readToEnd(),
+                  let dict = try PropertyListSerialization.propertyList(from: stdout, format: nil) as? [String : Any],
+                  let path = dict["image-path"] as? String else {
+                throw DiskutilError(status: process.terminationStatus, stderr: stderrPipe)
+            }
+
+            return URL(filePath: path)
+        } else {
+            guard let stdout = try stdoutHandle.readToEnd(),
+                  let array = try PropertyListSerialization.propertyList(from: stdout, format: nil) as? [String],
+                  array.count == 1,
+                  let path = array.first else {
+                throw HdiutilError(status: process.terminationStatus, stderr: stderrPipe)
+            }
+
+            return URL(fileURLWithPath: path)
+        }
+    }
+
+    public func mountImage(url: URL, readOnly: Bool) throws -> (mountPoint: URL, rootDirectory: URL, devEntry: URL) {
+        let process = Process()
+        let stdout = Pipe()
+        let stderr = Pipe()
+
+        var args: [String] = []
+
+        if #available(macOS 27.0, *) {
+            args = ["image", "attach", url.path(percentEncoded: false), "--plist"]
+            if readOnly {
+                args.append("--readOnly")
+            }
+
+            process.executableURL = URL(filePath: "/usr/sbin/diskutil")
+        } else {
+            args = ["attach", url.path, "-plist"]
+            if readOnly {
+                args.append("-readonly")
+            }
+
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
+        }
+        process.arguments = args
         process.standardOutput = stdout
         process.standardError = stderr
 
         try process.run()
         process.waitUntilExit()
 
-        guard let stdout = try stdoutHandle.readToEnd(),
-              let array = try PropertyListSerialization.propertyList(from: stdout, format: nil) as? [String],
-              array.count == 1,
-              let path = array.first else {
-            throw HdiutilError(status: process.terminationStatus, stderr: stderr)
-        }
-
-        return URL(fileURLWithPath: path)
-    }
-
-    public func mountImage(url: URL, readOnly: Bool) throws -> (mountPoint: URL, rootDirectory: URL, devEntry: URL) {
-        let hdiutil = Process()
-        let stdout = Pipe()
-        let stderr = Pipe()
-
-        var args = ["attach", url.path, "-plist"]
-        if readOnly {
-            args.append("-readonly")
-        }
-
-        hdiutil.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
-        hdiutil.arguments = args
-        hdiutil.standardOutput = stdout
-        hdiutil.standardError = stderr
-
-        try hdiutil.run()
-        hdiutil.waitUntilExit()
-
-        guard hdiutil.terminationStatus == 0,
+        guard process.terminationStatus == 0,
               let data = try stdout.fileHandleForReading.readToEnd(),
               let dict = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String : Any] else {
-            throw HdiutilError(status: hdiutil.terminationStatus, stderr: stderr)
+            if #available(macOS 27.0, *) {
+                throw DiskutilError(status: process.terminationStatus, stderr: stderr)
+            } else {
+                throw HdiutilError(status: process.terminationStatus, stderr: stderr)
+            }
         }
 
         for eachEntity in try #require(dict["system-entities"] as? [[String : Any]]) {
@@ -140,22 +202,26 @@ public struct DiskImageHelper: Sendable {
             }
         }
 
-        throw HdiutilError(status: hdiutil.terminationStatus, stderr: stderr)
+        if #available(macOS 27.0, *) {
+            throw DiskutilError(status: process.terminationStatus, stderr: stderr)
+        } else {
+            throw HdiutilError(status: process.terminationStatus, stderr: stderr)
+        }
     }
 
     public func unmountImage(mountPoint: URL, devEntry: URL) throws {
-        let hdiutil = Process()
+        let process = Process()
         let stderr = Pipe()
 
-        hdiutil.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
-        hdiutil.arguments = ["detach", devEntry.path]
-        hdiutil.standardError = stderr
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/diskutil")
+        process.arguments = ["eject", devEntry.path]
+        process.standardError = stderr
 
-        try hdiutil.run()
-        hdiutil.waitUntilExit()
+        try process.run()
+        process.waitUntilExit()
 
-        guard hdiutil.terminationStatus == 0 else {
-            throw HdiutilError(status: hdiutil.terminationStatus, stderr: stderr)
+        guard process.terminationStatus == 0 else {
+            throw DiskutilError(status: process.terminationStatus, stderr: stderr)
         }
 
         let deadline = Date().addingTimeInterval(10.0)
