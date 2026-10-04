@@ -46,7 +46,7 @@ public struct GenericDiskImageInfo: DiskImageInfo {
     }
 }
 
-@TaskLocal private var _mountedImages: [UUID : (mountPoint: URL, rootDirectory: URL, devEntry: URL)] = [:]
+@TaskLocal private var _mountedImages: [UUID : DiskImageHelper.MountedImage] = [:]
 
 @available(macOS 10.15.4, *)
 public struct MountTrait<Info: DiskImageInfo>: SuiteTrait, TestScoping {
@@ -107,16 +107,16 @@ public struct MountTrait<Info: DiskImageInfo>: SuiteTrait, TestScoping {
         let dmgHelper = DiskImageHelper.shared
 
         var createdImages: [URL] = []
-        var mountedImages: [UUID : (mountPoint: URL, rootDirectory: URL, devEntry: URL)] = [:]
+        var mountedImages: [UUID : DiskImageHelper.MountedImage] = [:]
         createdImages.reserveCapacity(self.images.count)
         mountedImages.reserveCapacity(self.images.count)
 
         defer {
-            for (mountPoint, _, devEntry) in mountedImages.values {
+            for image in mountedImages.values {
                 do {
-                    try dmgHelper.unmountImage(mountPoint: mountPoint, devEntry: devEntry)
+                    try dmgHelper.unmountImage(image)
                 } catch {
-                    print("Error unmounting \(devEntry.path): \(error)")
+                    print("Error unmounting \(image.devEntry.path): \(error)")
                 }
             }
 

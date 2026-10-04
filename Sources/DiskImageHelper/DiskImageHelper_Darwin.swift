@@ -7,6 +7,7 @@
 
 #if canImport(Darwin)
 
+import DiskArbitration
 import Foundation
 import Testing
 
@@ -42,6 +43,18 @@ public struct DiskImageHelper: Sendable {
                 self.stderr = "(unknown)"
             }
         }
+    }
+
+    public struct DADissenterError: Error {
+        init(dissenter: DADissenter) {}
+    }
+
+    public struct MountedImage: Sendable {
+        public let imageURL: URL
+        public let mountPoint: URL
+        public var rootDirectory: URL { self.mountPoint }
+        public let devEntry: URL
+        public let rootDevEntry: URL
     }
 
     public enum FileSystem: String, CaseIterable, Codable, Sendable {
@@ -155,7 +168,7 @@ public struct DiskImageHelper: Sendable {
         }
     }
 
-    public func mountImage(url: URL, readOnly: Bool) throws -> (mountPoint: URL, rootDirectory: URL, devEntry: URL) {
+    public func mountImage(url: URL, readOnly: Bool) throws -> MountedImage {
         let process = Process()
         let stdout = Pipe()
         let stderr = Pipe()
@@ -194,57 +207,143 @@ public struct DiskImageHelper: Sendable {
             }
         }
 
-        for eachEntity in try #require(dict["system-entities"] as? [[String : Any]]) {
-            if let mountPoint = eachEntity["mount-point"] as? String, let devEntry = eachEntity["dev-entry"] as? String {
-                let mountPointURL = URL(fileURLWithPath: mountPoint)
-                let devEntryURL = if #available(macOS 27.0, *) {
-                    URL(filePath: "/dev/\(devEntry)")
-                } else {
-                    URL(fileURLWithPath: devEntry)
-                }
+        var mountPoint: URL?
+        var mountDevEntry: URL?
+        var allDevEntries: [String] = []
 
-                return (mountPoint: mountPointURL, rootDirectory: mountPointURL, devEntry: devEntryURL)
+        for eachEntity in try #require(dict["system-entities"] as? [[String : Any]]) {
+            if let devEntry = eachEntity["dev-entry"] as? String {
+                allDevEntries.append(devEntry)
+
+                if let mountPointPath = eachEntity["mount-point"] as? String {
+                    let mountPointURL = URL(fileURLWithPath: mountPointPath)
+                    let devEntryURL = if #available(macOS 27.0, *) {
+                        URL(filePath: "/dev/\(devEntry)")
+                    } else {
+                        URL(fileURLWithPath: devEntry)
+                    }
+
+                    mountPoint = mountPointURL
+                    mountDevEntry = devEntryURL
+                }
             }
         }
 
-        if #available(macOS 27.0, *) {
-            throw DiskutilError(status: process.terminationStatus, stderr: stderr)
-        } else {
-            throw HdiutilError(status: process.terminationStatus, stderr: stderr)
+        guard let mountPoint, let mountDevEntry else {
+            if #available(macOS 27.0, *) {
+                throw DiskutilError(status: process.terminationStatus, stderr: stderr)
+            } else {
+                throw HdiutilError(status: process.terminationStatus, stderr: stderr)
+            }
         }
+
+        let rootDevEntry = try self.getRootEntry(allDevEntries)
+
+        return MountedImage(imageURL: url, mountPoint: mountPoint, devEntry: mountDevEntry, rootDevEntry: rootDevEntry)
     }
 
-    public func unmountImage(mountPoint: URL, devEntry: URL, maxAttempts: Int = 10) throws {
-        for i in 0..<maxAttempts {
-            do {
-                let process = Process()
-                let stderr = Pipe()
+    private func getRootEntry(_ devEntries: [String]) throws -> URL {
+        let registryPaths = try devEntries.map {
+            let matching = IOBSDNameMatching(kIOMainPortDefault, 0, $0)
+            let service = IOServiceGetMatchingService(kIOMainPortDefault, matching)
+            guard service != IO_OBJECT_NULL else { throw CocoaError(.fileReadUnknown) }
+            defer { IOObjectRelease(service) }
 
-                process.executableURL = URL(fileURLWithPath: "/usr/sbin/diskutil")
-                process.arguments = ["eject", devEntry.path]
-                process.standardError = stderr
+            guard let path = IORegistryEntryCopyPath(service, kIOServicePlane) else { throw CocoaError(.fileReadUnknown) }
+            return path.takeRetainedValue() as String
+        }
 
-                try process.run()
-                process.waitUntilExit()
+        guard let root = zip(devEntries, registryPaths).first(where: { _, path in
+            registryPaths.allSatisfy { $0 == path || $0.hasPrefix(path) }
+        }) else {
+            throw CocoaError(.fileReadUnknown)
+        }
 
-                guard process.terminationStatus == 0 else {
-                    throw DiskutilError(status: process.terminationStatus, stderr: stderr)
-                }
+        return URL(fileURLWithPath: "/dev/\(root.0)")
+    }
 
-                return
-            } catch let error as DiskutilError {
-                if i == maxAttempts - 1 {
-                    throw error
+    public func unmountImage(_ image: MountedImage, timeout: CFTimeInterval = 300.0) throws {
+        guard let session = DASessionCreate(kCFAllocatorDefault),
+              let runLoop = CFRunLoopGetCurrent(),
+              let partition = DADiskCreateFromBSDName(kCFAllocatorDefault, session, image.devEntry.lastPathComponent),
+              let wholeDisk = DADiskCopyWholeDisk(partition),
+              let rootDisk = DADiskCreateFromBSDName(kCFAllocatorDefault, session, image.rootDevEntry.lastPathComponent),
+              let wholeBSDName = DADiskGetBSDName(wholeDisk).map({ String(cString: $0) }) else {
+            throw CocoaError(.fileReadUnknown)
+        }
+
+        enum Callbacks {
+            static let unmount: DADiskUnmountCallback = {
+                print("!!! unmounted: dissenter is \($1)")
+                let ctx = Context.fromPointer($2!)
+
+                if let dissenter = $1 {
+                    ctx.error = DADissenterError(dissenter: dissenter)
                 } else {
-                    let process = Process()
-                    process.executableURL = URL(fileURLWithPath: "/usr/sbin/diskutil")
-                    process.arguments = ["unmountDisk", "force", devEntry.path]
-                    try process.run()
-                    process.waitUntilExit()
-
-                    sleep(5)
+                    ctx.unmounted = true
+                    print("!!! successfully unmounted")
+                    DADiskEject(ctx.rootDisk, UInt32(kDADiskEjectOptionDefault), Callbacks.eject, $2)
                 }
             }
+
+            static let eject: DADiskEjectCallback = {
+                let ctx = Context.fromPointer($2!)
+
+                if let dissenter = $1 {
+                    ctx.error = DADissenterError(dissenter: dissenter)
+                } else {
+                    print("!!! successfully ejected \(DADiskGetBSDName($0).map { String(cString: $0) }))")
+                    ctx.ejected = true
+                }
+            }
+
+            static let disappeared: DADiskDisappearedCallback = {
+                print("!!! disappeared: \(DADiskGetBSDName($0).map { String(cString: $0) }))")
+                let ctx = Context.fromPointer($1!)
+
+                ctx.disappeared = true
+            }
+        }
+
+        class Context {
+            let rootDisk: DADisk
+
+            var unmounted = false
+            var ejected = false
+            var disappeared = false
+            var error: any Swift.Error? = nil
+
+            static func fromPointer(_ ptr: UnsafeMutableRawPointer) -> Self {
+                Unmanaged.fromOpaque(ptr).takeUnretainedValue()
+            }
+            var toPointer: UnsafeMutableRawPointer { Unmanaged.passUnretained(self).toOpaque() }
+
+            init(rootDisk: DADisk) { self.rootDisk = rootDisk }
+        }
+
+        let mode = "com.charlessoft.DiskImageHelper.waitForUnmount" as CFString
+        DASessionScheduleWithRunLoop(session, runLoop, mode)
+        defer { DASessionUnscheduleFromRunLoop(session, runLoop, mode) }
+
+        let ctx = Context(rootDisk: rootDisk)
+
+        let match = [kDADiskDescriptionMediaBSDNameKey : wholeBSDName] as CFDictionary
+        DARegisterDiskDisappearedCallback(session, nil, Callbacks.disappeared, ctx.toPointer)
+
+        let options = DADiskUnmountOptions(kDADiskUnmountOptionWhole | kDADiskUnmountOptionForce)
+        DADiskUnmount(wholeDisk, options, Callbacks.unmount, ctx.toPointer)
+
+        let timeoutDate = Date(timeIntervalSinceNow: timeout)
+        while !ctx.disappeared, ctx.error == nil, Date() < timeoutDate {
+            CFRunLoopRunInMode(CFRunLoopMode(mode), 0.1, true)
+        }
+
+        if let err = ctx.error {
+            throw err
+        }
+
+        if !ctx.ejected || !ctx.disappeared {
+            throw CocoaError(.fileReadUnknown)
         }
     }
 }

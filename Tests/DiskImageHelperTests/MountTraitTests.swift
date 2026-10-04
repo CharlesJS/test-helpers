@@ -62,12 +62,9 @@ extension DiskImageHelperTests {
         func mountsWritableImage(image: MountTrait<GenericDiskImageInfo>.DiskImage) throws {
             let url = image.mountPoint.appending(path: UUID().uuidString)
 
-            print("trying to write")
             try "write test".write(to: url, atomically: true, encoding: .utf8)
-            print("trying to read to verify")
 
             try #expect(String(contentsOf: url, encoding: .utf8) == "write test")
-            print("success")
         }
     }
 

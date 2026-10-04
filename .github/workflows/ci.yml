@@ -19,7 +19,7 @@ jobs:
     - uses: ./.github/setup-filesystems
     - uses: SwiftyLab/setup-swift@latest
     - name: Run tests
-      run: swift test --xunit-output testresults.xml
+      run: script -q /dev/null swift test --xunit-output testresults.xml
     - name: Collect artifacts
       if: always()
       run: |
