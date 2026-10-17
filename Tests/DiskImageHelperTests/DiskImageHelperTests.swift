@@ -201,6 +201,17 @@ struct DiskImageHelperTests {
         #expect(FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: nil) == mounts)
     }
 
+    @Test func unmountNonexistentImageFailsQuickly() async throws {
+        let mountPoint = URL(fileURLWithPath: "/", isDirectory: true)
+        let devEntry = URL(fileURLWithPath: "/dev/disk999", isDirectory: true)
+
+        let startTime = Date()
+        #expect(throws: (any Swift.Error).self) {
+            try DiskImageHelper.shared.unmountImage(mountPoint: mountPoint, devEntry: devEntry)
+        }
+        #expect(Date().timeIntervalSince(startTime) < 1.0)
+    }
+
     // MARK: - Integration Tests
 
     @Test func fullMountUnmountCycle() async throws {

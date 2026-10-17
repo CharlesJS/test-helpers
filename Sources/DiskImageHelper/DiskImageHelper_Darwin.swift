@@ -233,7 +233,7 @@ public struct DiskImageHelper: Sendable {
 
                 return
             } catch let error as DiskutilError {
-                if i == maxAttempts - 1 {
+                if i == maxAttempts - 1 || (try? devEntry.checkResourceIsReachable()) != true {
                     throw error
                 } else {
                     let process = Process()
