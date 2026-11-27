@@ -17,7 +17,7 @@ runs:
         git submodule update --init
 
         mkdir build && cd build
-        cmake ..
+        cmake .. -DCMAKE_POLICY_VERSION_MINIMUM=3.5
         make
         cp apfs-fuse /usr/local/bin/
       shell: bash
